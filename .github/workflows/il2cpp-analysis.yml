@@ -1,0 +1,52 @@
+name: IL2CPP analysis
+
+on:
+workflow_dispatch:
+push:
+paths:
+- ‘GameAssembly.dll’
+- ‘global-metadata.dat’
+- ‘UnityPlayer.dll’
+- ‘XUNGLORDLOCAL.exe’
+- ‘.github/workflows/il2cpp-analysis.yml’
+
+permissions:
+contents: read
+
+jobs:
+dump:
+runs-on: windows-latest
+steps:
+- name: Checkout
+uses: actions/checkout@v4
+
+  - name: Setup .NET 6
+    uses: actions/setup-dotnet@v4
+    with:
+      dotnet-version: '6.0.x'
+  - name: Download Il2CppDumper v6.7.46
+    shell: pwsh
+    run: |
+      $url = "https://github.com/Perfare/Il2CppDumper/releases/download/v6.7.46/Il2CppDumper-net6-win-v6.7.46.zip"
+      Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\Il2CppDumper.zip"
+      Expand-Archive "$env:RUNNER_TEMP\Il2CppDumper.zip" -DestinationPath "$env:RUNNER_TEMP\Il2CppDumper" -Force
+  - name: Run Il2CppDumper
+    shell: pwsh
+    run: |
+      $exe = Get-ChildItem "$env:RUNNER_TEMP\Il2CppDumper" -Filter "Il2CppDumper.exe" -Recurse | Select-Object -First 1
+      if (-not $exe) { throw "Il2CppDumper.exe not found" }
+      if (-not (Test-Path "GameAssembly.dll")) { throw "GameAssembly.dll not found" }
+      if (-not (Test-Path "global-metadata.dat")) { throw "global-metadata.dat not found" }
+      New-Item -ItemType Directory -Force -Path "il2cpp-output" | Out-Null
+      & $exe.FullName "GameAssembly.dll" "global-metadata.dat" "il2cpp-output"
+      if ($LASTEXITCODE -ne 0) { throw "Il2CppDumper failed with exit code $LASTEXITCODE" }
+  - name: Package output
+    shell: pwsh
+    run: |
+      Compress-Archive -Path "il2cpp-output\*" -DestinationPath "il2cpp-output.zip" -Force
+  - name: Upload artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: gllegendary-il2cpp-output
+      path: il2cpp-output.zip
+      retention-days: 7
